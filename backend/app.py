@@ -497,6 +497,65 @@ def clear_run_history() -> dict[str, str]:
     return {"message": "Run history cleared"}
 
 
+@app.get("/reliability_map", tags=["reliability"])
+def get_reliability_map() -> dict[str, Any]:
+    """Mock reliability map data for visualization."""
+    now = datetime.now(UTC)
+    nodes = [
+        {
+            "id": "agent",
+            "label": "Active Agent",
+            "type": "agent",
+            "score": round(random.uniform(0.7, 0.95), 2),
+            "lastRun": (now - timedelta(minutes=random.randint(0, 60))).isoformat(),
+        }
+    ]
+    links = []
+
+    # Add suites from SUITE_TEMPLATES
+    suite_ids = ["output", "custom", "crisis"]
+    for suite_id in suite_ids:
+        suite_label = SUITE_LABELS.get(suite_id, suite_id.title())
+        score = round(random.uniform(0.6, 0.9), 2)
+        nodes.append({
+            "id": suite_id,
+            "label": suite_label,
+            "type": "suite",
+            "score": score,
+            "lastRun": (now - timedelta(minutes=random.randint(0, 120))).isoformat(),
+        })
+        strength = score
+        drift = round(random.uniform(0.0, 0.3), 2)
+        links.append({
+            "source": "agent",
+            "target": suite_id,
+            "strength": strength,
+            "drift": drift,
+        })
+
+    # Add personas
+    personas = ["Rhema", "Tutor", "Analyst"]
+    for persona in personas:
+        score = round(random.uniform(0.65, 0.85), 2)
+        nodes.append({
+            "id": persona.lower(),
+            "label": persona,
+            "type": "persona",
+            "score": score,
+            "lastRun": (now - timedelta(minutes=random.randint(0, 90))).isoformat(),
+        })
+        strength = score
+        drift = round(random.uniform(0.0, 0.25), 2)
+        links.append({
+            "source": "agent",
+            "target": persona.lower(),
+            "strength": strength,
+            "drift": drift,
+        })
+
+    return {"nodes": nodes, "links": links}
+
+
 @app.post("/chat", tags=["chat"])
 def chat_with_opencode(request: ChatRequest) -> dict[str, str]:
     if settings.mock_mode or not settings.openai_api_key:
