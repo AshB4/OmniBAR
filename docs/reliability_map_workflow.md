@@ -42,9 +42,9 @@ The Reliability Map provides a system-level view of agent reliability as an inte
   - **Opacity**: Based on `drift` (decay factor, lower = more faded).
 
 ### 3. Interact with the Visualization
-- **Hover Nodes**: Tooltips show score, last run timestamp, and type.
+- **Hover Nodes**: Tooltips show score, last run timestamp, type, and connection details.
 - **Observe Animations**: Edges pulse to indicate live reliability; fading shows temporal decay.
-- **Node Details**: Click nodes (future enhancement) to drill into suite/persona details.
+- **Node Details**: Click nodes to view details in console (basic implementation); future enhancement for drill-down views.
 - **Theme Toggle**: Switch between light and dark modes using the toggle in the header for better visibility in different environments.
 
 ### 4. Monitor Reliability Evolution
