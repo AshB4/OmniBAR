@@ -31,7 +31,7 @@ The Reliability Map provides a system-level view of agent reliability as an inte
 
 ### 1. Access the Reliability Map
 - Navigate to "Reliability Map" in the sidebar of the OmniBAR frontend.
-- The page loads mock data from `/api/mock_reliability_map` (or live data if configured).
+- The page loads reliability data from `/reliability_map` (requires authentication; uses mock data for demo).
 
 ### 2. Interpret the Network Graph
 - **Center Node**: Active agent (e.g., "Active Agent") with overall reliability score.
@@ -60,7 +60,7 @@ The Reliability Map provides a system-level view of agent reliability as an inte
 ## Technical Implementation
 
 ### Backend
-- **Endpoint**: `GET /api/mock_reliability_map`
+- **Endpoint**: `GET /reliability_map` (requires X-API-Key authentication)
 - **Data Structure**:
   ```json
   {

@@ -15,6 +15,7 @@ Suggested phrasing:
 > “FastAPI generates the full OpenAPI contract for us. I have it open in JSON Viewer Pro so you can see how LatteRun objects embed Benchmark summaries. That spec powers the interactive Swagger docs, which stay aligned with the Pydantic models we ship.”
 
 ## 3. Frontend and Reliability Console (90 seconds)
+- **OmniBrew Mode Handling.** Demonstrate the mode dropdown (inherited, mock, live) and how selections persist across sessions and errors, ensuring consistent user experience without forcing fallback modes.
 - **Control Room.** Demonstrate launching benchmark runs, adjusting threshold sliders, and accessing snapshot JSON for auditability.
 - **Benchmarks view.** Show the summary cards, status badges, and JSON inspector that bridge both developer metrics (latency, cost, token counts) and scientist needs (raw outputs). Call out that every row links to a full JSON breakdown so reviewers can reproduce any score. Demonstrate the payload selector drop-down so the reviewer sees how multiple benchmark runs can be compared without leaving the view.
 - **Runs log.** Explain how the run history provides regression tracking, smoke tests, and failure triage.
@@ -38,8 +39,9 @@ Suggested phrasing:
 - Invite questions and point them to the Swagger docs or JSON snapshots if they want to inspect further.
 
 ## Quick Checklist Before the Walkthrough
+- [ ] .env.template copied to .env and configured (OPENAI_API_KEY for live mode, MOCK_MODE=false).
 - [ ] Swagger UI is running and populated with live schema.
-- [ ] Mock mode flag demonstrated at least once (e.g., via environment toggle) and highlight the Mock Mode badge in the UI so the reviewer always knows the active environment.
+- [ ] Mock mode flag demonstrated at least once (e.g., via environment toggle) and highlight the Mock Mode badge in the UI so the reviewer always knows the active environment. Note mode persistence in OmniBrew dropdown.
 - [ ] Control Room demo plan: launch a run, adjust threshold, export JSON.
 - [ ] Benchmarks table data seeded so status badges show variety (pass/fail).
 - [ ] Benchmarks payload selector pre-loaded with at least two runs so you can show the JSON inspector surfacing latency, token counts, and cost for each.

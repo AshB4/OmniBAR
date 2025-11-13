@@ -17,8 +17,8 @@ The goal is to provide transparent, reproducible insights into how AI agents per
   ```
 - **Create secrets**
   ```bash
-  cp backend/.env.example backend/.env
-  # edit backend/.env and add your OPENAI_API_KEY (keep MOCK_MODE=true for mock runs)
+  cp backend/.env.template backend/.env
+  # edit backend/.env and add your OPENAI_API_KEY (set MOCK_MODE=false for live runs, true for mock)
   ```
 - **Backend**
   ```bash
@@ -109,7 +109,7 @@ This project was built with BrainGnosis’ UI principles in mind:
 
 ## OmniBrew
 - **Purpose:** Interactive prompt lab that lets reviewers craft system + user prompts, submit them to OmniBAR, and inspect both the LLM reply and the judge’s scoring output.
-- **Modes:** Dropdown toggles between inherited mode, forced mock, and forced live. Live mode invokes OpenAI; mock mode returns deterministic demo strings.
+- **Modes:** Dropdown toggles between inherited mode, forced mock, and forced live. Live mode invokes OpenAI; mock mode returns deterministic demo strings. Mode selection persists across sessions and errors for consistent user experience.
 - **Outputs:** Displays assistant reply, barista note, score, latency, and token usage per run. Aggregates rollups for total runs, averages, and per-model stats.
 - **Log Export:** “Download log” button generates a JSON snapshot containing every run (including the OmniBAR scoring breakdown) for reproducibility and DFL review.
 
