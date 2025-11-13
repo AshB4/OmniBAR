@@ -30,6 +30,7 @@ From this work we are releasing **OmniBAR** (**B**enchmarking **A**gentic **R**e
 - [Why OmniBAR is Different](#why-omnibar-is-different)
 - [How It Works](#how-it-works)
 - [Installation](#installation)
+- [Deployment & Configuration](#deployment--configuration)
 - [30-Second Demo](#30-second-demo)
 - [Quick Start](#quick-start)
 - [Common Use Cases](#common-use-cases)
@@ -173,6 +174,322 @@ pydantic==2.11.7
 rich==14.1.0
 numpy==2.3.2
 tqdm==4.67.1
+```
+
+## Deployment & Configuration
+
+### Environment Variables
+
+OmniBAR supports extensive configuration through environment variables:
+
+```bash
+# .env
+# API Keys
+OPENAI_API_KEY=your_openai_api_key_here
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# Database Configuration
+DATABASE_URL=sqlite:///./omnibar.db  # SQLite (default)
+# DATABASE_URL=postgresql://user:pass@localhost/omnibar  # PostgreSQL
+# DATABASE_URL=mysql://user:pass@localhost/omnibar      # MySQL
+
+# Application Settings
+OMNIBAR_ENV=production  # development, staging, production
+MOCK_MODE=false         # true for testing without API calls
+LOG_LEVEL=INFO          # DEBUG, INFO, WARNING, ERROR
+
+# Scoring Configuration
+SCORING_MODEL=gpt-4o-mini  # Model used for LLM-based scoring
+SCORING_TIMEOUT=30         # Timeout for scoring requests (seconds)
+
+# Performance & Scaling
+MAX_WORKERS=4             # Number of concurrent workers
+BATCH_SIZE=10             # Batch size for bulk operations
+CACHE_TTL=3600            # Cache TTL in seconds
+
+# Security
+CORS_ORIGINS=http://localhost:3000,http://localhost:5173  # Allowed origins
+API_KEY=your_api_key_here  # Optional API key for backend access
+PASSWORD=your_password     # Optional password for basic auth
+
+# Frontend Configuration
+VITE_ENABLE_MSW=false     # Enable Mock Service Worker in development
+VITE_OMNIBREW_ENV=mock    # mock, development, production
+```
+
+### Database Options
+
+#### SQLite (Default - Recommended for Development)
+```bash
+DATABASE_URL=sqlite:///./omnibar.db
+```
+- **Pros**: Zero configuration, file-based, perfect for development
+- **Cons**: Limited concurrency, not suitable for high-traffic production
+
+#### PostgreSQL (Recommended for Production)
+```bash
+DATABASE_URL=postgresql://user:password@localhost:5432/omnibar
+```
+- **Setup**:
+  ```bash
+  # Install PostgreSQL
+  brew install postgresql  # macOS
+  sudo apt install postgresql postgresql-contrib  # Ubuntu
+
+  # Create database
+  createdb omnibar
+  createuser omnibar_user
+  psql -c "ALTER USER omnibar_user PASSWORD 'your_password';"
+  psql -c "GRANT ALL PRIVILEGES ON DATABASE omnibar TO omnibar_user;"
+  ```
+
+#### MySQL/MariaDB
+```bash
+DATABASE_URL=mysql://user:password@localhost:3306/omnibar
+```
+
+### Scaling Considerations
+
+#### Multi-Worker Setup
+```bash
+# Run multiple backend instances
+uvicorn backend.app:app --host 0.0.0.0 --port 8000 --workers 4
+
+# Use a process manager
+pip install gunicorn
+gunicorn backend.app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+```
+
+#### Caching Strategy
+- **Redis** for distributed caching (recommended for production)
+- **In-memory** cache for single-instance deployments
+- **Database** caching for persistence across restarts
+
+#### Load Balancing
+```nginx
+# nginx.conf example
+upstream omnibar_backend {
+    server 127.0.0.1:8000;
+    server 127.0.0.1:8001;
+    server 127.0.0.1:8002;
+    server 127.0.0.1:8003;
+}
+
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location /api {
+        proxy_pass http://omnibar_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+        root /path/to/frontend/dist;
+    }
+}
+```
+
+### Security Configuration
+
+#### API Key Authentication
+```python
+# Enable in backend/config.py
+API_KEY="your-secure-api-key-here"
+```
+
+#### CORS Settings
+```python
+# backend/config.py
+CORS_ORIGINS = [
+    "http://localhost:3000",  # React dev server
+    "http://localhost:5173",  # Vite dev server
+    "https://yourdomain.com", # Production frontend
+]
+```
+
+#### HTTPS/SSL
+```nginx
+# Force HTTPS
+server {
+    listen 80;
+    server_name your-domain.com;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name your-domain.com;
+
+    ssl_certificate /path/to/ssl/cert.pem;
+    ssl_certificate_key /path/to/ssl/private.key;
+
+    # ... rest of config
+}
+```
+
+### Monitoring & Observability
+
+#### Logging Configuration
+```python
+# Automatic structured logging
+import logging
+logging.basicConfig(
+    level=getattr(logging, os.getenv('LOG_LEVEL', 'INFO')),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+```
+
+#### Health Checks
+```bash
+# Application health endpoint
+curl http://localhost:8000/health
+
+# Database connectivity
+curl http://localhost:8000/health/db
+```
+
+#### Metrics Collection
+- **Prometheus** integration for metrics
+- **Structured logging** for observability
+- **Performance monitoring** via application metrics
+
+### Deployment Options
+
+#### Docker Deployment
+```dockerfile
+# Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+RUN pip install -e .
+
+EXPOSE 8000
+CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+```bash
+# Build and run
+docker build -t omnibar .
+docker run -p 8000:8000 -e OPENAI_API_KEY=your_key omnibar
+```
+
+#### Cloud Platforms
+
+**Railway** (Recommended for quick deployment):
+```bash
+# railway.json
+{
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "uvicorn backend.app:app --host 0.0.0.0 --port $PORT"
+  }
+}
+```
+
+**Heroku**:
+```yaml
+# Procfile
+web: uvicorn backend.app:app --host 0.0.0.0 --port $PORT
+```
+
+**Vercel** (Frontend only):
+```json
+// vercel.json
+{
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "http://your-backend-url/api/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
+```
+
+#### Local Development vs Production
+
+**Development**:
+- SQLite database
+- Mock mode enabled
+- Debug logging
+- Hot reload enabled
+
+**Production**:
+- PostgreSQL/MySQL database
+- Real API integrations
+- Structured logging
+- Optimized caching
+- HTTPS enabled
+- Monitoring configured
+
+### Troubleshooting Common Issues
+
+#### Database Connection Issues
+```bash
+# Test database connectivity
+python -c "from backend.database import get_db; next(get_db())"
+```
+
+#### API Key Problems
+```bash
+# Verify API keys
+curl -H "Authorization: Bearer $OPENAI_API_KEY" https://api.openai.com/v1/models
+```
+
+#### Performance Issues
+```bash
+# Check memory usage
+ps aux | grep uvicorn
+
+# Monitor database connections
+# Check your database's connection monitoring tools
+```
+
+## Quick Setup
+
+Get OmniBAR running in under 5 minutes:
+
+### 1. Clone & Install
+```bash
+git clone https://github.com/BrainGnosis/OmniBAR.git
+cd OmniBAR
+pip install -e .
+```
+
+### 2. Configure Environment
+```bash
+# Copy and edit environment file
+cp backend/.env.example backend/.env
+# Edit backend/.env - set MOCK_MODE=true for testing
+```
+
+### 3. Start Services
+```bash
+# Terminal 1: Backend
+cd backend && uvicorn app:app --reload --port 8000
+
+# Terminal 2: Frontend
+cd frontend && npm install && npm run dev
+```
+
+### 4. Verify Setup
+- **Backend API**: http://localhost:8000/docs
+- **Frontend UI**: http://localhost:5173
+- **Test API**: `curl http://localhost:8000/api/score_prompt -d '{"prompt":"test"}'`
+
+### 5. Run Tests
+```bash
+# Core library tests
+cd tests && python3 run_tests.py fast
+
+# Frontend E2E tests
+cd frontend && npm run test:e2e
 ```
 
 ## 30-Second Demo

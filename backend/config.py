@@ -51,6 +51,12 @@ class Settings(BaseModel):
             if origin.strip()
         ]
     )
+    api_key: str | None = Field(
+        default_factory=lambda: os.getenv("API_KEY", "mock-api-key")
+    )
+    password: str = Field(
+        default_factory=lambda: os.getenv("PASSWORD", "admin")
+    )
     
 
     class Config:

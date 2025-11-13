@@ -30,6 +30,9 @@ async function handleResponse<T>(response: Response): Promise<T> {
 export async function getBenchmarks(): Promise<BenchmarkRecord[]> {
   const response = await fetch(`${API_BASE}/benchmarks`, {
     credentials: 'include',
+    headers: {
+      'X-API-Key': 'mock-api-key',
+    },
   });
   return handleResponse<BenchmarkRecord[]>(response);
 }
@@ -49,6 +52,9 @@ export async function runOnce(input: AgentInput): Promise<RunRecord> {
 export async function getRecentRuns(): Promise<RunHistoryEntry[]> {
   const response = await fetch(`${API_BASE}/runs`, {
     credentials: 'include',
+    headers: {
+      'X-API-Key': 'mock-api-key',
+    },
   });
   return handleResponse<RunHistoryEntry[]>(response);
 }
@@ -59,6 +65,7 @@ export async function runBenchmarkSuite(suite?: string): Promise<RunBenchmarkSui
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'X-API-Key': 'mock-api-key',
     },
     body: JSON.stringify({ suite: suite ?? 'output', save: true, threshold }),
   });
@@ -69,6 +76,9 @@ export async function clearRunHistory(): Promise<void> {
   const response = await fetch(`${API_BASE}/runs`, {
     method: 'DELETE',
     credentials: 'include',
+    headers: {
+      'X-API-Key': 'mock-api-key',
+    },
   });
   await handleResponse<Record<string, unknown>>(response);
 }
@@ -76,6 +86,9 @@ export async function clearRunHistory(): Promise<void> {
 export async function getLLMHealth(): Promise<{ status: string; latency: number; model: string; output: string }> {
   const response = await fetch(`${API_BASE}/health/llm`, {
     credentials: 'include',
+    headers: {
+      'X-API-Key': 'mock-api-key',
+    },
   });
   return handleResponse(response);
 }
@@ -84,6 +97,9 @@ export async function runLLMSmokeTest(): Promise<{ status: string; latency: numb
   const response = await fetch(`${API_BASE}/benchmarks/smoke`, {
     method: 'POST',
     credentials: 'include',
+    headers: {
+      'X-API-Key': 'mock-api-key',
+    },
   });
   return handleResponse(response);
 }
@@ -127,6 +143,7 @@ export async function sendChatMessage(message: string): Promise<{ response: stri
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'X-API-Key': 'mock-api-key',
     },
     body: JSON.stringify({ message }),
   });

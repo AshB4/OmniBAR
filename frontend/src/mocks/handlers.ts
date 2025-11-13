@@ -30,22 +30,22 @@ function evaluateObjectives(input: AgentInput, output: AgentOutput): ObjectiveRe
   const expected = input.operation === 'add' ? String(input.a + input.b) : input.operation === 'multiply' ? String(input.a * input.b) : 'error';
   const objectives: ObjectiveResult[] = [];
 
-  objectives.push({
-    id: generateId(),
-    name: 'Exact answer match',
-    kind: 'stringEquals',
-    pass: output.answer === expected,
-    details: `Expected ${expected}, got ${output.answer}`,
-  });
+   objectives.push({
+     id: generateId(),
+     name: 'Exact answer match',
+     kind: 'stringEquals',
+     success: output.answer === expected,
+     details: `Expected ${expected}, got ${output.answer}`,
+   });
 
-  const regex = /^(Adding|Multiplying) \d+ .* = \d+$/;
-  objectives.push({
-    id: generateId(),
-    name: 'Explanation format',
-    kind: 'regexMatch',
-    pass: regex.test(output.explanation),
-    details: 'Explanation must describe the math operation',
-  });
+   const regex = /^(Adding|Multiplying) \d+ .* = \d+$/;
+   objectives.push({
+     id: generateId(),
+     name: 'Explanation format',
+     kind: 'regexMatch',
+     success: regex.test(output.explanation),
+     details: 'Explanation must describe the math operation',
+   });
 
   return objectives;
 }
@@ -75,7 +75,7 @@ function simulateAgent(input: AgentInput): AgentOutput {
 }
 
 export const handlers = [
-  http.get('/api/benchmarks', () => {
+  http.get('/benchmarks', () => {
     return HttpResponse.json(benchmarkRows);
   }),
   http.post('/api/run', async ({ request }) => {

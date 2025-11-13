@@ -7,17 +7,17 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 
-import type { BenchmarkRow } from '@/types';
+import type { BenchmarkRecord } from '@/types/benchmarks';
 import { useAppStore } from '@/lib/store';
 
 export interface BenchmarkTableProps {
-  data: BenchmarkRow[];
+  data: BenchmarkRecord[];
 }
 
 export function BenchmarkTable({ data }: BenchmarkTableProps) {
   const { status, q, setSelectedBenchmarkId, selectedBenchmarkId } = useAppStore();
   const [sorting, setSorting] = useState<SortingState>([]);
-  const columns = useMemo<ColumnDef<BenchmarkRow>[]>(
+  const columns = useMemo<ColumnDef<BenchmarkRecord>[]>(
     () => [
       { accessorKey: 'name', header: 'Name', enableSorting: false },
       { accessorKey: 'iterations', header: 'Iterations', enableSorting: false },
@@ -29,7 +29,19 @@ export function BenchmarkTable({ data }: BenchmarkTableProps) {
       },
       { accessorKey: 'status', header: 'Status', enableSorting: false },
       {
-        accessorKey: 'lastUpdated',
+        accessorKey: 'latencySeconds',
+        header: 'Latency (s)',
+        cell: (info) => (info.getValue<number>() ?? 0).toFixed(2),
+        enableSorting: true,
+      },
+      {
+        accessorKey: 'costUsd',
+        header: 'Cost ($)',
+        cell: (info) => `$${(info.getValue<number>() ?? 0).toFixed(4)}`,
+        enableSorting: true,
+      },
+      {
+        accessorKey: 'updatedAt',
         header: 'Last Updated',
         cell: (info) => new Date(info.getValue<string>()).toLocaleString(),
         enableSorting: true,

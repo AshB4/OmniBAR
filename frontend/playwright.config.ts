@@ -2,12 +2,13 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
+  testMatch: '*.spec.ts',
   timeout: 30_000,
   expect: {
     timeout: 5_000,
   },
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: 'http://localhost:5173',
     trace: 'retain-on-failure',
     video: 'retain-on-failure',
   },
@@ -18,9 +19,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev -- --host 127.0.0.1 --port 5173',
-    port: 5173,
-    reuseExistingServer: !process.env.CI,
+    command: 'npm run dev',
+    url: 'http://localhost:5173',
+    reuseExistingServer: true,
     timeout: 120_000,
     env: {
       VITE_ENABLE_MSW: 'false',

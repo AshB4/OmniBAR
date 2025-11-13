@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, Column, DateTime, Float, Integer, String, Text, Boolean
+from sqlalchemy import JSON, Column, DateTime, Float, Integer, String, Text, Boolean, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .db import Base
+from db import Base
 
 
 class LatteRun(Base):
@@ -45,4 +45,52 @@ class LatteRun(Base):
             "completion_tokens": self.completion_tokens,
             "total_tokens": self.total_tokens,
             "mock_run": self.mock_run,
+        }
+
+
+class BenchmarkRun(Base):
+    __tablename__ = "benchmark_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    suite: Mapped[str] = mapped_column(String(50), nullable=False)
+    suite_label: Mapped[str] = mapped_column(String(100), nullable=False)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    summary: Mapped[Any] = mapped_column(JSON, nullable=False)
+    benchmark_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    failed: Mapped[int] = mapped_column(Integer, nullable=False)
+    success: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    threshold: Mapped[float | None] = mapped_column(Float)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "suite": self.suite,
+            "suiteLabel": self.suite_label,
+            "requestedAt": self.requested_at.isoformat(),
+            "generatedAt": self.generated_at.isoformat(),
+            "summary": self.summary,
+            "benchmarkCount": self.benchmark_count,
+            "failed": self.failed,
+            "success": self.success,
+            "status": self.status,
+            "threshold": self.threshold,
+        }
+
+
+class BenchmarkSnapshot(Base):
+    __tablename__ = "benchmark_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    suite: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    data: Mapped[Any] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "suite": self.suite,
+            "data": self.data,
+            "updatedAt": self.updated_at.isoformat(),
         }

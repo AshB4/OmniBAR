@@ -21,10 +21,10 @@ const DEFAULT_SYSTEM_PROMPT =
   'You are a world-class AI barista who responds with warmth and precision.';
 
 const FALLBACK_CONFIG: LatteConfig = {
-  mock_mode: true,
+  mock_mode: false,
   default_model: 'gpt-4o-mini',
   scoring_model: 'gpt-4o-mini',
-  available_models: ['gpt-4o-mini', 'gpt-3.5-turbo'],
+  available_models: ['gpt-4o-mini', 'gpt-4o'],
 };
 
 const FALLBACK_RUN: LatteRun = {
@@ -99,11 +99,14 @@ export default function OmniBrew() {
         setForm((prev) => ({ ...prev, model: cfg.default_model }));
       } catch (err) {
         console.error(err);
-        setConfig(FALLBACK_CONFIG);
-        setRuns([FALLBACK_RUN]);
-        setRollups(FALLBACK_ROLLUPS);
-        setForm((prev) => ({ ...prev, model: FALLBACK_CONFIG.default_model }));
-        setError('Connected in offline demo mode. Live API is unavailable.');
+        // Set live config by default, respect user's mode selection
+        if (!config) {
+          setConfig({ mock_mode: false, default_model: 'gpt-4o-mini', scoring_model: 'gpt-4o-mini', available_models: ['gpt-4o-mini', 'gpt-4o'] });
+          setForm((prev) => ({ ...prev, model: 'gpt-4o-mini' }));
+        }
+        setRuns([]);
+        setRollups(null);
+        setError('Live API is unavailable. Unable to load data.');
       }
     };
 
