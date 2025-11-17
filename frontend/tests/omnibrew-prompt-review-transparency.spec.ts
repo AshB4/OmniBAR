@@ -60,13 +60,17 @@ test.describe('OmniBrew:Prompt Review transparency surface', () => {
     });
 
     await page.goto('/');
-    await page.getByRole('button', { name: 'Benchmarks' }).click();
+    await page.getByRole('button', { name: 'Benchmarks', exact: true }).click();
 
     await expect(page.getByText('Mock Mode')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Benchmark Library' })).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Latency (s)' })).toBeVisible();
-    await expect(page.getByRole('cell', { name: '1.23' })).toBeVisible();
-    await expect(page.getByRole('cell', { name: '0.0123' })).toBeVisible();
+    
+    // Wait for the benchmarks data to load
+    await expect(page.getByRole('cell', { name: 'Reliability Snapshot' })).toBeVisible();
+    
+    await expect(page.getByText('Latency (s)')).toBeVisible();
+    await expect(page.locator('table').getByText('1.23')).toBeVisible();
+    await expect(page.locator('table').getByText('0.0123')).toBeVisible();
 
     const jsonInspector = page.getByRole('button', { name: 'Full benchmark snapshot (array)' });
     await expect(jsonInspector).toBeVisible();
@@ -93,7 +97,7 @@ test.describe('OmniBrew:Prompt Review transparency surface', () => {
     });
 
     await page.goto('/');
-    await page.getByRole('button', { name: 'Benchmarks' }).click();
+    await page.getByRole('button', { name: 'Benchmarks', exact: true }).click();
 
     await expect(page.getByText('Loading benchmarks…')).toBeVisible();
     await expect(page.getByText('Snapshot unavailable')).toBeVisible();

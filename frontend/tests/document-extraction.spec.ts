@@ -10,6 +10,6 @@ test.describe('Document Extraction dashboard', () => {
     await datasetSelect.selectOption('math_reasoning');
 
     await expect(page.getByRole('heading', { name: 'Document Extraction Benchmarks' })).toBeVisible();
-    await expect(page.getByText('Quadratic Explainer')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Quadratic Explainer' })).toBeVisible();
   });
 });

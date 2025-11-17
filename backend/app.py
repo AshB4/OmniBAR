@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 import random
 from datetime import UTC, datetime, timedelta
@@ -9,18 +10,20 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 try:
     from .config import get_settings
     from .database import Base, SessionLocal, engine
-    from .models import LatteRun
+    from .models import LatteRun, BenchmarkRun, BenchmarkSnapshot
+    from .mock_data import (
+        SUITE_LABELS,
+        _generate_suite_payload,
+    )
     from .schemas import (
         ConfigResponse,
         LatteCreateRequest,
@@ -35,7 +38,11 @@ except ImportError:  # pragma: no cover - direct execution fallback
         sys.path.insert(0, str(project_root))
     from backend.config import get_settings  # type: ignore[no-redef]
     from backend.database import Base, SessionLocal, engine  # type: ignore[no-redef]
-    from backend.models import LatteRun  # type: ignore[no-redef]
+    from backend.models import LatteRun, BenchmarkRun, BenchmarkSnapshot  # type: ignore[no-redef]
+    from backend.mock_data import (  # type: ignore[no-redef]
+        SUITE_LABELS,
+        _generate_suite_payload,
+    )
     from backend.schemas import (  # type: ignore[no-redef]
         ConfigResponse,
         LatteCreateRequest,
@@ -47,6 +54,17 @@ except ImportError:  # pragma: no cover - direct execution fallback
 
 settings = get_settings()
 
+MAX_HISTORY = 30
+
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+def get_api_key(api_key: str = Depends(api_key_header)) -> str | None:
+    if settings.mock_mode:
+        return api_key
+    if api_key == settings.api_key:
+        return api_key
+    raise HTTPException(status_code=401, detail="Invalid API Key")
+
 app = FastAPI(
     title="OmniBrew", version="0.1.0", description="Prompt Trace Scoring with OmniBAR"
 )
@@ -54,7 +72,7 @@ app = FastAPI(
 origins = list(
     dict.fromkeys(
         (settings.allow_origins or [])
-        + ["http://localhost:5173", "http://127.0.0.1:5173"]
+        + ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"]
     )
 )
 
@@ -62,302 +80,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
-
-SUITE_LABELS = {
-    "output": "Calculator Demo Suite",
-    "custom": "Custom Agents Suite",
-    "crisis": "Crisis Command Suite",
-    "all": "Run Everything",
-}
-
-SuiteTemplate = dict[str, Any]
-
-SUITE_TEMPLATES: dict[str, list[SuiteTemplate]] = {
-    "output": [
-        {
-            "id": "calc-string-check",
-            "name": "Addition String Check",
-            "iterations": 5,
-            "base_success": 0.93,
-            "latency": 0.42,
-            "cost": 0.00015,
-            "suite": "output",
-            "failure_objective": "Addition accurate",
-            "failure_reason": "Mismatch between expected string and response.",
-        },
-        {
-            "id": "calc-regex-match",
-            "name": "Multiplication Regex",
-            "iterations": 4,
-            "base_success": 0.88,
-            "latency": 0.38,
-            "cost": 0.00012,
-            "suite": "output",
-            "failure_objective": "Regex captures product",
-            "failure_reason": "Output failed to match the expected multiplication pattern.",
-        },
-        {
-            "id": "calc-objective-run",
-            "name": "Combined Objective Run",
-            "iterations": 3,
-            "base_success": 0.81,
-            "latency": 0.55,
-            "cost": 0.0002,
-            "suite": "output",
-            "failure_objective": "All calculator objectives pass",
-            "failure_reason": "One or more scenarios returned incorrect arithmetic.",
-        },
-    ],
-    "custom": [
-        {
-            "id": "custom-weather",
-            "name": "Weather Agent Scenario",
-            "iterations": 6,
-            "base_success": 0.79,
-            "latency": 0.72,
-            "cost": 0.00032,
-            "suite": "custom",
-            "failure_objective": "Weather summary accuracy",
-            "failure_reason": "Temperature range omitted or mismatched city.",
-        },
-        {
-            "id": "custom-translate",
-            "name": "Translation Agent Accuracy",
-            "iterations": 5,
-            "base_success": 0.84,
-            "latency": 0.63,
-            "cost": 0.00029,
-            "suite": "custom",
-            "failure_objective": "EN→ES translation fidelity",
-            "failure_reason": "Idiomatic phrase translated too literally.",
-        },
-        {
-            "id": "custom-fallbacks",
-            "name": "Fallback Strategy Guardrails",
-            "iterations": 4,
-            "base_success": 0.75,
-            "latency": 0.81,
-            "cost": 0.00033,
-            "suite": "custom",
-            "failure_objective": "Escalation to human",
-            "failure_reason": "Agent failed to surface escalation guidance after tool failure.",
-        },
-    ],
-    "crisis": [
-        {
-            "id": "crisis-inventory",
-            "name": "Inventory Fulfillment",
-            "iterations": 7,
-            "base_success": 0.77,
-            "latency": 0.94,
-            "cost": 0.00041,
-            "suite": "crisis",
-            "failure_objective": "Backorder mitigation",
-            "failure_reason": "Critical SKUs not prioritized during shortage.",
-        },
-        {
-            "id": "crisis-routing",
-            "name": "Crisis Routing Plan",
-            "iterations": 6,
-            "base_success": 0.7,
-            "latency": 1.02,
-            "cost": 0.00037,
-            "suite": "crisis",
-            "failure_objective": "Delivery routing",
-            "failure_reason": "Suboptimal route increased ETA beyond policy.",
-        },
-        {
-            "id": "crisis-communication",
-            "name": "Stakeholder Comms",
-            "iterations": 5,
-            "base_success": 0.83,
-            "latency": 0.88,
-            "cost": 0.00035,
-            "suite": "crisis",
-            "failure_objective": "Escalation cadence",
-            "failure_reason": "Status updates missed 30-min SLA window.",
-        },
-    ],
-}
-
-
-def _iter_suite_templates(suite: str) -> Iterable[SuiteTemplate]:
-    if suite == "all":
-        yield from SUITE_TEMPLATES["output"]
-        yield from SUITE_TEMPLATES["custom"]
-        yield from SUITE_TEMPLATES["crisis"]
-    else:
-        yield from SUITE_TEMPLATES.get(suite, [])
-
-
-def _bounded(value: float, *, lower: float = 0.0, upper: float = 1.0) -> float:
-    return max(lower, min(upper, value))
-
-
-def _generate_history_slice(success_rate: float) -> list[dict[str, Any]]:
-    now = datetime.now(UTC)
-    entries: list[dict[str, Any]] = []
-    for step in range(3):
-        entries.append(
-            {
-                "timestamp": (now - timedelta(minutes=step * 5))
-                .replace(microsecond=0)
-                .isoformat(),
-                "objective": f"Check {step + 1}",
-                "result": success_rate > 0.5 or step < 1,
-                "message": "Objective evaluated via OmniBAR mock snapshot.",
-            }
-        )
-    return entries
-
-
-def _generate_suite_payload(
-    suite: str, threshold: float | None = None
-) -> dict[str, Any]:
-    now = datetime.now(UTC)
-    benchmarks: list[dict[str, Any]] = []
-    failure_insights: list[dict[str, Any]] = []
-    recommendations: list[dict[str, Any]] = []
-
-    total_success = 0
-    total_failed = 0
-
-    for template in _iter_suite_templates(suite):
-        success_rate = _bounded(template["base_success"] + random.uniform(-0.08, 0.08))
-        status = "success" if success_rate >= 0.8 else "failed"
-        if status == "success":
-            total_success += 1
-        else:
-            total_failed += 1
-
-        latency = max(template["latency"] + random.uniform(-0.2, 0.25), 0.08)
-        cost = max(template["cost"] + random.uniform(-0.0002, 0.0002), 0.0)
-        tokens = int(600 + random.uniform(-80, 120))
-
-        history = _generate_history_slice(success_rate)
-        benchmark = {
-            "id": template["id"],
-            "name": template["name"],
-            "iterations": template["iterations"],
-            "successRate": round(success_rate, 3),
-            "status": status,
-            "updatedAt": now.isoformat(),
-            "suite": template.get("suite", suite),
-            "latencySeconds": round(latency, 3),
-            "tokensUsed": tokens,
-            "costUsd": round(cost, 5),
-            "confidenceReported": round(_bounded(success_rate * 0.96), 3),
-            "confidenceCalibrated": round(_bounded(success_rate * 0.92), 3),
-            "history": history,
-        }
-
-        if status == "failed":
-            benchmark["latestFailure"] = {
-                "objective": template.get("failure_objective"),
-                "reason": template.get("failure_reason"),
-                "category": "quality",
-            }
-            failure_insights.append(
-                {
-                    "id": f"insight-{template['id']}",
-                    "benchmarkId": template["id"],
-                    "benchmarkName": template["name"],
-                    "failureRate": round(1 - success_rate, 3),
-                    "lastFailureAt": now.isoformat(),
-                    "topIssues": [
-                        template.get(
-                            "failure_reason", "Observed deviation in latest run."
-                        ),
-                        "Requires operator follow-up.",
-                    ],
-                    "recommendedFix": "Review prompt strategy and re-run targeted objectives.",
-                    "failureCategory": "quality",
-                    "history": history,
-                }
-            )
-
-        benchmarks.append(benchmark)
-
-    total = len(benchmarks)
-    summary = {"total": total, "success": total_success, "failed": total_failed}
-
-    recommendations = [
-        {
-            "id": f"rec-{suite}-playbook",
-            "title": "Refresh evaluation playbook",
-            "impact": "High",
-            "summary": "Review the latest OmniBAR telemetry and confirm coverage of risky objectives.",
-            "action": "Draft a remediation checklist for the agent team.",
-        },
-        {
-            "id": f"rec-{suite}-guardrails",
-            "title": "Tighten guardrails",
-            "impact": "Medium",
-            "summary": "Implement guardrail prompts for known failure modes captured in the insights panel.",
-            "action": "Experiment with a low-temperature retry policy and compare scores.",
-        },
-    ]
-
-    live_runs = [
-        {
-            "id": str(uuid4()),
-            "benchmarkName": benchmarks[0]["name"] if benchmarks else "Calculator Demo",
-            "status": "completed",
-            "currentIteration": benchmarks[0]["iterations"] if benchmarks else 3,
-            "totalIterations": benchmarks[0]["iterations"] if benchmarks else 3,
-            "startedAt": now.isoformat(),
-        },
-        {
-            "id": str(uuid4()),
-            "benchmarkName": "OmniBAR Snapshot Builder",
-            "status": "queued",
-            "currentIteration": 0,
-            "totalIterations": 5,
-            "startedAt": None,
-        },
-    ]
-
-    payload = {
-        "benchmarks": benchmarks,
-        "summary": summary,
-        "liveRuns": live_runs,
-        "failureInsights": failure_insights,
-        "recommendations": recommendations,
-        "generatedAt": now.isoformat(),
-        "threshold": threshold,
-    }
-    return payload
-
-
-RUN_HISTORY: list[dict[str, Any]] = []
-MAX_HISTORY = 30
-CURRENT_SNAPSHOT = _generate_suite_payload("output")
-
-
-def _record_suite_run(
-    suite: str, payload: dict[str, Any], threshold: float | None
-) -> dict[str, Any]:
-    summary = payload["summary"]
-    entry = {
-        "id": str(uuid4()),
-        "suite": suite,
-        "suiteLabel": SUITE_LABELS.get(suite, suite.title()),
-        "requestedAt": datetime.now(UTC).isoformat(),
-        "generatedAt": payload.get("generatedAt"),
-        "summary": summary,
-        "benchmarkCount": summary["total"],
-        "failed": summary["failed"],
-        "success": summary["success"],
-        "status": "success" if summary["failed"] == 0 else "needs_attention",
-        "threshold": threshold,
-    }
-    RUN_HISTORY.insert(0, entry)
-    if len(RUN_HISTORY) > MAX_HISTORY:
-        del RUN_HISTORY[MAX_HISTORY:]
-    return entry
 
 
 @app.on_event("startup")
@@ -424,6 +149,118 @@ def analytics_rollups(db: Session = Depends(get_db)) -> LatteRollupResponse:
     return get_rollups(db)
 
 
+@app.post("/login", tags=["auth"])
+def login(request: LoginRequest) -> dict[str, str]:
+    if request.password == settings.password:
+        return {"token": settings.api_key or "mock-api-key"}
+    raise HTTPException(status_code=401, detail="Invalid password")
+
+
+def generate_id() -> str:
+    return str(uuid4())
+
+
+def evaluate_objectives(input: AgentInput, output: AgentOutput) -> list[ObjectiveResult]:
+    expected = str(input.a + input.b) if input.operation == 'add' else str(input.a * input.b) if input.operation == 'multiply' else 'error'
+    objectives: list[ObjectiveResult] = []
+
+    objectives.append(ObjectiveResult(
+        id=generate_id(),
+        name='Exact answer match',
+        kind='stringEquals',
+        success=output.answer == expected,
+        details=f'Expected {expected}, got {output.answer}',
+    ))
+
+    regex = r'^(Adding|Multiplying) \d+ .* = \d+$'
+    objectives.append(ObjectiveResult(
+        id=generate_id(),
+        name='Explanation format',
+        kind='regexMatch',
+        success=bool(re.match(regex, output.explanation)),
+        details='Explanation must describe the math operation',
+    ))
+
+    return objectives
+
+
+def simulate_agent(input: AgentInput) -> AgentOutput:
+    if input.operation == 'add':
+        answer = str(input.a + input.b)
+        return AgentOutput(
+            answer=answer,
+            explanation=f'Adding {input.a} + {input.b} = {answer}',
+            status='success',
+        )
+    if input.operation == 'multiply':
+        answer = str(input.a * input.b)
+        return AgentOutput(
+            answer=answer,
+            explanation=f'Multiplying {input.a} x {input.b} = {answer}',
+            status='success',
+        )
+    return AgentOutput(
+        answer='error',
+        explanation='Unsupported operation',
+        status='error',
+    )
+
+
+@app.post("/test", tags=["api"])
+def test(data: dict) -> dict:
+    return {"received": data}
+
+@app.post("/api/score_prompt", tags=["api"])
+def score_prompt(payload: dict, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Legacy endpoint for scoring prompts - creates a latte run."""
+    prompt = payload.get("prompt", "")
+    model = payload.get("model", "gpt-4o-mini")
+    if not prompt.strip():
+        raise HTTPException(status_code=400, detail="Prompt is required")
+
+    try:
+        # Create a latte run with defaults
+        create_payload = LatteCreateRequest(
+            system_prompt="You are a helpful AI assistant.",
+            user_prompt=prompt,
+            temperature=0.7,
+            model=model,
+            mock=None,  # Use default
+        )
+        run = create_latte_run(db, create_payload, settings=settings)
+        return {
+            "id": run.id,
+            "score": run.score,
+            "response": run.response,
+            "note": run.baristas_note,
+            "breakdown": run.scoring_breakdown,
+        }
+    except Exception:
+        # Service unavailable (e.g., invalid API key, model not available)
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+
+
+@app.post("/api/run", tags=["api"])
+def run_agent(agent_input: dict) -> dict:
+    try:
+        data = AgentInput(**agent_input)
+        output = simulate_agent(data)
+        objectives = evaluate_objectives(data, output)
+        combined_pass = output.status == 'success' and all(obj.success for obj in objectives)
+        record = RunRecord(
+            id=generate_id(),
+            input=data,
+            output=output,
+            objectives=objectives,
+            combinedPass=combined_pass,
+            latencyMs=random.randint(120, 260),
+            startedAt=datetime.now(UTC).isoformat(),
+        )
+        return record.dict()
+    except Exception as e:
+        return {"error": str(e)}
+
+
 class BenchmarkRunRequest(BaseModel):
     suite: str = "output"
     save: bool | None = True
@@ -434,48 +271,125 @@ class ChatRequest(BaseModel):
     message: str
 
 
-@app.get("/benchmarks", tags=["benchmarks"])
+class LoginRequest(BaseModel):
+    password: str
+
+
+class AgentInput(BaseModel):
+    operation: str
+    a: int
+    b: int
+
+
+class AgentOutput(BaseModel):
+    answer: str
+    explanation: str
+    status: str
+
+
+class ObjectiveResult(BaseModel):
+    id: str
+    name: str
+    kind: str
+    success: bool
+    details: str
+
+
+class RunRecord(BaseModel):
+    id: str
+    input: AgentInput
+    output: AgentOutput
+    objectives: list[ObjectiveResult]
+    combinedPass: bool
+    latencyMs: int
+    startedAt: str
+
+
+@app.get("/benchmarks", tags=["benchmarks"], dependencies=[Depends(get_api_key)])
 def get_benchmarks_snapshot() -> list[dict[str, Any]]:
-    global CURRENT_SNAPSHOT
-    if not CURRENT_SNAPSHOT["benchmarks"]:
-        CURRENT_SNAPSHOT = _generate_suite_payload("output")
-    return CURRENT_SNAPSHOT["benchmarks"]
+    db = SessionLocal()
+    try:
+        snapshot = db.query(BenchmarkSnapshot).filter(BenchmarkSnapshot.suite == "output").first()
+        if not snapshot or not snapshot.data.get("benchmarks"):
+            payload = _generate_suite_payload("output")
+            if snapshot:
+                snapshot.data = payload
+                snapshot.updated_at = datetime.now(UTC)
+            else:
+                snapshot = BenchmarkSnapshot(suite="output", data=payload)
+                db.add(snapshot)
+            db.commit()
+        return snapshot.data["benchmarks"]
+    finally:
+        db.close()
 
 
-@app.post("/benchmarks/run", tags=["benchmarks"])
+@app.post("/benchmarks/run", tags=["benchmarks"], dependencies=[Depends(get_api_key)])
 def run_benchmark_suite(request: BenchmarkRunRequest) -> dict[str, Any]:
-    global CURRENT_SNAPSHOT
-    suite = request.suite or "output"
-    payload = _generate_suite_payload(suite, request.threshold)
-    CURRENT_SNAPSHOT = payload
-    _record_suite_run(suite, payload, request.threshold)
-    return payload
+    db = SessionLocal()
+    try:
+        suite = request.suite or "output"
+        payload = _generate_suite_payload(suite, request.threshold)
+
+        # Save snapshot
+        snapshot = db.query(BenchmarkSnapshot).filter(BenchmarkSnapshot.suite == suite).first()
+        if snapshot:
+            snapshot.data = payload
+            snapshot.updated_at = datetime.now(UTC)
+        else:
+            snapshot = BenchmarkSnapshot(suite=suite, data=payload)
+            db.add(snapshot)
+
+        # Save run
+        summary = payload["summary"]
+        run = BenchmarkRun(
+            id=str(uuid4()),
+            suite=suite,
+            suite_label=SUITE_LABELS.get(suite, suite.title()),
+            requested_at=datetime.now(UTC),
+            generated_at=datetime.fromisoformat(payload["generatedAt"]),
+            summary=summary,
+            benchmark_count=summary["total"],
+            failed=summary["failed"],
+            success=summary["success"],
+            status="success" if summary["failed"] == 0 else "needs_attention",
+            threshold=request.threshold,
+        )
+        db.add(run)
+        db.commit()
+        return payload
+    finally:
+        db.close()
 
 
-@app.post("/benchmarks/smoke", tags=["benchmarks"])
+@app.post("/benchmarks/smoke", tags=["benchmarks"], dependencies=[Depends(get_api_key)])
 def run_smoke_test() -> dict[str, Any]:
-    latency = round(random.uniform(0.25, 1.2), 3)
-    output = "LLM mock smoke test passed."
-    entry = {
-        "id": str(uuid4()),
-        "suite": "smoke",
-        "suiteLabel": "LLM Smoke Test",
-        "requestedAt": datetime.now(UTC).isoformat(),
-        "generatedAt": datetime.now(UTC).isoformat(),
-        "summary": {"total": 1, "success": 1, "failed": 0},
-        "benchmarkCount": 1,
-        "failed": 0,
-        "success": 1,
-        "status": "success",
-        "threshold": None,
-    }
-    RUN_HISTORY.insert(0, entry)
-    if len(RUN_HISTORY) > MAX_HISTORY:
-        del RUN_HISTORY[MAX_HISTORY:]
-    return {"status": "ok", "latency": latency, "output": output}
+    db = SessionLocal()
+    try:
+        latency = round(random.uniform(0.25, 1.2), 3)
+        output = "LLM mock smoke test passed."
+        now = datetime.now(UTC)
+        run = BenchmarkRun(
+            id=str(uuid4()),
+            suite="smoke",
+            suite_label="LLM Smoke Test",
+            requested_at=now,
+            generated_at=now,
+            summary={"total": 1, "success": 1, "failed": 0},
+            benchmark_count=1,
+            failed=0,
+            success=1,
+            status="success",
+            threshold=None,
+        )
+        db.add(run)
+        db.commit()
+        return {"status": "ok", "latency": latency, "output": output}
+    finally:
+        db.close()
 
 
-@app.get("/health/llm", tags=["benchmarks"])
+@app.get("/health/llm", tags=["benchmarks"], dependencies=[Depends(get_api_key)])
 def llm_health() -> dict[str, Any]:
     latency = round(random.uniform(0.35, 1.5), 3)
     return {
@@ -486,32 +400,123 @@ def llm_health() -> dict[str, Any]:
     }
 
 
-@app.get("/runs", tags=["benchmarks"])
+@app.get("/runs", tags=["benchmarks"], dependencies=[Depends(get_api_key)])
 def get_run_history() -> list[dict[str, Any]]:
-    return RUN_HISTORY
+    db = SessionLocal()
+    try:
+        runs = db.query(BenchmarkRun).order_by(BenchmarkRun.requested_at.desc()).limit(MAX_HISTORY).all()
+        return [r.to_dict() for r in runs]
+    finally:
+        db.close()
 
 
-@app.delete("/runs", tags=["benchmarks"])
+@app.delete("/runs", tags=["benchmarks"], dependencies=[Depends(get_api_key)])
 def clear_run_history() -> dict[str, str]:
-    RUN_HISTORY.clear()
-    return {"message": "Run history cleared"}
+    db = SessionLocal()
+    try:
+        db.query(BenchmarkRun).delete()
+        db.commit()
+        return {"message": "Run history cleared"}
+    finally:
+        db.close()
 
 
-@app.post("/chat", tags=["chat"])
+@app.get("/reliability_map", tags=["reliability"], dependencies=[Depends(get_api_key)])
+def get_reliability_map() -> dict[str, Any]:
+    """Mock reliability map data for visualization."""
+    now = datetime.now(UTC)
+    nodes = [
+        {
+            "id": "agent",
+            "label": "Active Agent",
+            "type": "agent",
+            "score": round(random.uniform(0.7, 0.95), 2),
+            "lastRun": (now - timedelta(minutes=random.randint(0, 60))).isoformat(),
+        }
+    ]
+    links = []
+
+    # Add suites from SUITE_TEMPLATES
+    suite_ids = ["output", "custom", "crisis"]
+    for suite_id in suite_ids:
+        suite_label = SUITE_LABELS.get(suite_id, suite_id.title())
+        score = round(random.uniform(0.6, 0.9), 2)
+        nodes.append({
+            "id": suite_id,
+            "label": suite_label,
+            "type": "suite",
+            "score": score,
+            "lastRun": (now - timedelta(minutes=random.randint(0, 120))).isoformat(),
+        })
+        strength = score
+        drift = round(random.uniform(0.0, 0.3), 2)
+        links.append({
+            "source": "agent",
+            "target": suite_id,
+            "strength": strength,
+            "drift": drift,
+        })
+
+    # Add personas
+    personas = ["Rhema", "Tutor", "Analyst"]
+    for persona in personas:
+        score = round(random.uniform(0.65, 0.85), 2)
+        nodes.append({
+            "id": persona.lower(),
+            "label": persona,
+            "type": "persona",
+            "score": score,
+            "lastRun": (now - timedelta(minutes=random.randint(0, 90))).isoformat(),
+        })
+        strength = score
+        drift = round(random.uniform(0.0, 0.25), 2)
+        links.append({
+            "source": "agent",
+            "target": persona.lower(),
+            "strength": strength,
+            "drift": drift,
+        })
+
+    return {"nodes": nodes, "links": links}
+
+
+@app.post("/chat", tags=["chat"], dependencies=[Depends(get_api_key)])
 def chat_with_opencode(request: ChatRequest) -> dict[str, str]:
     if settings.mock_mode or not settings.openai_api_key:
-        # Mock response
+        # Mock response - reversed text
         response = f"Opencode says: {request.message[::-1]}"
     else:
-        # Use OpenAI
+        # Use OpenAI as Opencode
+        from langchain.schema import SystemMessage, HumanMessage
         llm = ChatOpenAI(
             model=settings.default_model,
             api_key=settings.openai_api_key,
             temperature=settings.temperature,
         )
         try:
-            ai_response = llm.invoke(request.message)
+            messages = [
+                SystemMessage(content="You are Opencode, a helpful AI assistant specialized in software engineering, coding, and development tasks. Respond helpfully and technically, focusing on programming and engineering advice."),
+                HumanMessage(content=request.message)
+            ]
+            ai_response = llm.invoke(messages)
             response = ai_response.content
         except Exception as e:
             response = f"Error: {str(e)}"
     return {"response": response}
+
+
+@app.get("/health")
+def health_check():
+    """Basic health check endpoint."""
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+
+@app.get("/health/db")
+def health_check_db(db: Session = Depends(get_db)):
+    """Database health check endpoint."""
+    try:
+        # Simple query to test database connection
+        db.execute(text("SELECT 1"))
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database error: {e}")

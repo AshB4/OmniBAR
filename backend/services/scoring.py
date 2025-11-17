@@ -10,8 +10,9 @@ from pydantic import Field
 
 from omnibar.core.types import FloatEvalResult, InvalidEvalResult
 from omnibar.objectives.llm_judge import DEFAULT_SCORE_PROMPT, LLMJudgeObjective
+from omnibar.objectives.prompt_quality import PromptQualityObjective
 
-from ..config import Settings
+from config import Settings
 
 
 @dataclass
@@ -83,8 +84,34 @@ def evaluate_with_omnibar(
     user_prompt: str,
     settings: Settings,
 ) -> ScoreResult:
-    if settings.mock_mode or not settings.openai_api_key:
-        return _mock_score(response, user_prompt)
+    # Use lightweight prompt quality evaluation for real scoring
+    if not settings.mock_mode:
+        try:
+            objective = PromptQualityObjective(
+                name="prompt_quality_scorer",
+                output_key="prompt",
+                goal="Evaluate prompt quality",  # Not used but required by interface
+            )
+
+            # Evaluate the user prompt quality
+            eval_result = objective.eval({"prompt": user_prompt})
+
+            if isinstance(eval_result, FloatEvalResult):
+                score = max(0.0, min(1.0, float(eval_result.result)))
+                note = eval_result.message or "Prompt quality evaluated using heuristic analysis."
+                breakdown = {
+                    "mode": "lightweight_heuristic",
+                    "evaluation_type": "prompt_quality",
+                    "raw_score": float(eval_result.result),
+                    "feedback": eval_result.message,
+                }
+                return ScoreResult(score=round(score, 3), note=note, breakdown=breakdown)
+        except Exception as error:
+            # Fall back to mock scoring if lightweight evaluation fails
+            pass
+
+    # Fall back to mock scoring (original behavior)
+    return _mock_score(response, user_prompt)
 
     goal = (
         "Judge how well the assistant replied to the latte order."

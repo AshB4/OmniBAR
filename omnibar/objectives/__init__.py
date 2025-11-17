@@ -15,14 +15,16 @@ from omnibar.objectives.combined import CombinedBenchmarkObjective
 from omnibar.objectives.llm_judge import LLMJudgeObjective
 from omnibar.objectives.output import StringEqualityObjective, RegexMatchObjective
 from omnibar.objectives.path import PathEqualityObjective, PartialPathEqualityObjective
+from omnibar.objectives.prompt_quality import PromptQualityObjective
 from omnibar.objectives.state import StateEqualityObjective, PartialStateEqualityObjective
 
 __all__ = [
     "BaseBenchmarkObjective",
-    "CombinedBenchmarkObjective", 
+    "CombinedBenchmarkObjective",
     "LLMJudgeObjective",
+    "PromptQualityObjective",
     "StringEqualityObjective",
-    "RegexMatchObjective", 
+    "RegexMatchObjective",
     "PathEqualityObjective",
     "PartialPathEqualityObjective",
     "StateEqualityObjective",
